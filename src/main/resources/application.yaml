@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: url-shortener
+
+  datasource:
+    # These env vars come from docker-compose. Fallbacks let you run locally too.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/shortener}
+    username: ${DB_USER:shortener}
+    password: ${DB_PASSWORD:shortener}
+
+  jpa:
+    # ddl-auto=validate means Hibernate checks the schema matches entities but
+    # never modifies it. Flyway owns the schema. This is the professional default.
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        # Logs SQL with bound params during dev. Turn off in prod.
+        format_sql: true
+    show-sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+# What the redirect host should be. Configurable so prod can use a real domain.
+app:
+  base-url: ${APP_BASE_URL:http://localhost:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
