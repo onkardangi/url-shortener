@@ -12,8 +12,6 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.Optional;
-
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -67,7 +65,7 @@ class UrlControllerTest {
 
     @Test
     void redirect_validCode_returns301WithLocation() throws Exception {
-        when(service.resolve("1")).thenReturn(Optional.of("https://example.com"));
+        when(service.resolveUrl("1")).thenReturn("https://example.com");
 
         mockMvc.perform(get("/1"))
                 .andExpect(status().isMovedPermanently())
@@ -76,7 +74,7 @@ class UrlControllerTest {
 
     @Test
     void redirect_unknownCode_returns404() throws Exception {
-        when(service.resolve("xyz")).thenReturn(Optional.empty());
+        when(service.resolveUrl("xyz")).thenReturn(null);
 
         mockMvc.perform(get("/xyz"))
                 .andExpect(status().isNotFound());

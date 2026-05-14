@@ -35,11 +35,13 @@ public class UrlController {
 
     @GetMapping("/{code}")
     public ResponseEntity<Void> redirect(@PathVariable String code) {
-        return service.resolve(code)
-                .map(longUrl -> ResponseEntity
-                        .status(HttpStatus.MOVED_PERMANENTLY)
-                        .location(URI.create(longUrl))
-                        .<Void>build())
-                .orElse(ResponseEntity.notFound().build());
+        String longUrl = service.resolveUrl(code);
+        if (longUrl == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity
+                .status(HttpStatus.MOVED_PERMANENTLY)
+                .location(URI.create(longUrl))
+                .build();
     }
 }

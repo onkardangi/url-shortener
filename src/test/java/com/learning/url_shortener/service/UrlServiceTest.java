@@ -42,34 +42,34 @@ class UrlServiceTest {
     }
 
     @Test
-    void resolve_validCode_returnsLongUrl() {
+    void resolveUrl_validCode_returnsLongUrl() {
         Url url = new Url("https://example.com");
         url.setId(1L);
         when(encoder.decode("1")).thenReturn(1L);
         when(repository.findById(1L)).thenReturn(Optional.of(url));
 
-        var result = service.resolve("1");
+        var result = service.resolveUrl("1");
 
-        assertThat(result).contains("https://example.com");
+        assertThat(result).isEqualTo("https://example.com");
     }
 
     @Test
-    void resolve_invalidCharInCode_returnsEmpty() {
+    void resolveUrl_invalidCharInCode_returnsNull() {
         when(encoder.decode("!@#")).thenThrow(new IllegalArgumentException("invalid char"));
 
-        var result = service.resolve("!@#");
+        var result = service.resolveUrl("!@#");
 
-        assertThat(result).isEmpty();
+        assertThat(result).isNull();
         verify(repository, never()).findById(any());
     }
 
     @Test
-    void resolve_unknownId_returnsEmpty() {
+    void resolveUrl_unknownId_returnsNull() {
         when(encoder.decode("xyz")).thenReturn(999L);
         when(repository.findById(999L)).thenReturn(Optional.empty());
 
-        var result = service.resolve("xyz");
+        var result = service.resolveUrl("xyz");
 
-        assertThat(result).isEmpty();
+        assertThat(result).isNull();
     }
 }
