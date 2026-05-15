@@ -34,6 +34,7 @@ build/
 
 ### Environment ###
 .env
+application-local.yaml
 
 ### Node ###
 node_modules/

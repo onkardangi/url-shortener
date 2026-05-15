@@ -1,0 +1,86 @@
+{
+  "title": "URL Shortener",
+  "uid": "url-shortener",
+  "timezone": "browser",
+  "refresh": "5s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP Throughput (req/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{application=\"url-shortener\"}[1m]))",
+          "legendFormat": "Total req/s"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HTTP p95 Latency (ms)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{application=\"url-shortener\"}[1m])) by (le, uri)) * 1000",
+          "legendFormat": "p95 {{ uri }}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "HTTP Error Rate (%)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "(sum(rate(http_server_requests_seconds_count{application=\"url-shortener\", status=~\"5..\"}[1m])) or vector(0)) / sum(rate(http_server_requests_seconds_count{application=\"url-shortener\"}[1m])) * 100",
+          "legendFormat": "Error %"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "HikariCP Active Connections",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "hikaricp_connections_active{application=\"url-shortener\"}",
+          "legendFormat": "Active connections"
+        },
+        {
+          "expr": "hikaricp_connections_max{application=\"url-shortener\"}",
+          "legendFormat": "Max pool size"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "JVM Heap Memory Used (MB)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "jvm_memory_used_bytes{application=\"url-shortener\", area=\"heap\"} / 1024 / 1024",
+          "legendFormat": "Heap used MB"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "JVM GC Pause Time (ms/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(jvm_gc_pause_seconds_sum{application=\"url-shortener\"}[1m]) * 1000",
+          "legendFormat": "GC pause ms/s"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "version": 1
+}

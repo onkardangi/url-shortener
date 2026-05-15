@@ -8,7 +8,7 @@ spring:
     username: ${DB_USER:shortener}
     password: ${DB_PASSWORD:shortener}
     hikari:
-      maximum-pool-size: 20        # max connections per instance
+      maximum-pool-size: 20       # max connections per instance
       minimum-idle: 5              # keep 5 warm connections ready
       connection-timeout: 20000    # 20s — wait for a connection before erroring
       idle-timeout: 300000         # 5min — close idle connections
@@ -25,11 +25,14 @@ spring:
       hibernate:
         # Logs SQL with bound params during dev. Turn off in prod.
         format_sql: true
-    show-sql: true
+    show-sql: false
 
   flyway:
     enabled: true
     locations: classpath:db/migration
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/shortener}
+    user: ${DB_USER:shortener}
+    password: ${DB_PASSWORD:shortener}
 
   # ─── Redis ───────────────────────────────────────────────
   data:
@@ -53,9 +56,17 @@ server:
 # What the redirect host should be. Configurable so prod can use a real domain.
 app:
   base-url: ${APP_BASE_URL:http://localhost:8080}
+  datasource:
+    replica-url: ${DB_REPLICA_URL:${DB_URL:jdbc:postgresql://localhost:5432/shortener}}
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info,metrics,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true   # brackets required — dots would be parsed as nested keys

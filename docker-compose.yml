@@ -5,22 +5,54 @@ services:
       POSTGRES_DB: shortener
       POSTGRES_USER: shortener
       POSTGRES_PASSWORD: shortener
+      # Replication user credentials
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: replicator_password
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres/primary/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+      - ./postgres/primary/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    command: |
+      postgres
+      -c wal_level=replica
+      -c max_wal_senders=3
+      -c max_replication_slots=3
+      -c hot_standby=on
+      -c hba_file=/etc/postgresql/pg_hba.conf
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U shortener" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres-replica:
+    image: postgres:16-alpine
+    environment:
+      PGUSER: replicator
+      PGPASSWORD: replicator_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./postgres/replica/init.sh:/init.sh:ro
+    entrypoint: ["/bin/sh", "/init.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U shortener"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -53,10 +85,39 @@ services:
     depends_on:
       - app
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://127.0.0.1/ > /dev/null 2>&1 || exit 1"]
+      test: [ "CMD-SHELL", "curl -s http://127.0.0.1/ > /dev/null 2>&1 || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 3
 
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'   # allows config reload via API
+    depends_on:
+      - app
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin    # change in prod
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
 volumes:
   postgres_data:
+  postgres_replica_data:
+  prometheus_data: #  Prometheus time-series storage
+  grafana_data:       # Grafana dashboards and settings

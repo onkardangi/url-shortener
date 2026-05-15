@@ -687,3 +687,109 @@ Median:       16ms      →  10ms       (1.6x)
 Max latency:  12,370ms  →  2,310ms    (5.4x)
 Errors:       0         →  0          (clean throughout)
 ```
+
+---
+
+---
+
+# Phase 4c — Read Replica
+
+## What changed
+
+Added a second Postgres instance configured as a streaming replica:
+
+- Primary (`postgres:5432`) — handles all writes (INSERT) and WAL streaming
+- Replica (`postgres-replica:5432`) — handles all reads (SELECT), replicates from primary via WAL streaming
+
+Routing is transparent to application code via `AbstractRoutingDataSource`:
+
+```
+@Transactional(readOnly = true)  →  replica  (resolveUrl — cache misses)
+@Transactional                   →  primary  (shorten — all writes)
+```
+
+`TransactionSynchronizationManager.isCurrentTransactionReadOnly()` determines the target at runtime. No changes to service or controller code.
+
+## How replication works
+
+```
+POST /shorten
+  → primary: INSERT INTO urls
+  → primary writes to WAL
+  → WAL streams to replica (sub-millisecond lag)
+  → replica replays WAL
+  → replica now has the new URL
+
+GET /{code} (cache miss)
+  → Redis: miss
+  → replica: SELECT * FROM urls WHERE id = ?
+  → primary never touched
+```
+
+## Setup
+
+- `postgres/primary/init.sh` — creates `replicator` user, adds `pg_hba.conf` entry, reloads config
+- `postgres/replica/init.sh` — runs `pg_basebackup` to clone primary, starts in hot standby mode
+- `DataSourceConfig.java` — creates two HikariCP pools and an `AbstractRoutingDataSource`
+- Flyway explicitly pointed at primary URL — replica rejects DDL writes
+
+## Stress test — before vs after
+
+**Workload:** 95% cache miss rate, 5% hot codes, cold pool size 500k, 800 VUs ramp
+
+| Metric | No replica | With replica | Improvement |
+|---|---|---|---|
+| Throughput | 2,477/s | 4,432/s | 1.8x |
+| p90 | 128ms | 90ms | 1.4x |
+| p95 | 185ms | 134ms | 1.4x |
+| Median | 30ms | 19ms | 1.6x |
+| Max | 7,650ms | 3,120ms | 2.5x |
+| Errors | 0 | 0 | clean |
+
+## Why 1.8x and not 2x
+
+Three reasons the improvement is less than the theoretical doubling of read capacity:
+
+**20% of reads still hit Redis** — hot codes are cached and never reach either Postgres. Those reads don't benefit from the replica at all. Only the 80% cold-miss reads actually used the replica.
+
+**App layer became the new ceiling** — with two Postgres instances handling reads faster, the 3 JVMs processing requests became relatively more constrained. The bottleneck shifted from DB to app.
+
+**Local machine contention** — two Postgres processes competing for cores on the same laptop. On dedicated hardware the improvement would be closer to 2x.
+
+## Key observations
+
+**Replica rejects writes correctly** — attempting a direct INSERT on the replica returns `ERROR: cannot execute INSERT in a read-only transaction`. Spring never routes writes there, but the safeguard is real.
+
+**Replication lag is sub-millisecond locally** — `pg_stat_replication` shows `sent_lsn = replay_lsn` meaning the replica is fully caught up at all times during normal load.
+
+**Flyway runs on primary only** — explicit `spring.flyway.url` pointing at primary prevents Flyway from attempting schema writes on the read-only replica.
+
+---
+
+## Full stress test progression (updated)
+
+| Setup | Workload | Throughput | p95 | Median | Max | Errors |
+|---|---|---|---|---|---|---|
+| Phase 1 — 1 instance, no cache | 100% cache hits | 1,015/s | 275ms | 16ms | 12,370ms | 0 |
+| Phase 3b — 3 instances + Redis + Nginx (8 workers) | 100% cache hits | 13,172/s | 59ms | 10ms | 2,310ms | 0 |
+| Phase 4b — pool size 20, no replica | 95% cache misses | 2,477/s | 185ms | 30ms | 7,650ms | 0 |
+| Phase 4c — pool size 20 + read replica | 95% cache misses | 4,432/s | 134ms | 19ms | 3,120ms | 0 |
+
+## Cumulative improvements — Phase 1 → Phase 4c (cache miss workload)
+
+```
+Throughput:   1,015/s   →  4,432/s    (4.4x)
+p95:          275ms     →  134ms      (2.1x)
+Median:       16ms      →  19ms       (workload changed — not regression)
+Max latency:  12,370ms  →  3,120ms    (4.0x)
+Errors:       0         →  0          (clean throughout)
+```
+
+## Remaining bottlenecks
+
+| Component | Current state | Next fix |
+|---|---|---|
+| Redis | Single instance, single point of failure | Redis Cluster |
+| Postgres primary | Still handles all writes | Read replica handles reads ✅ |
+| App instances | 3 instances, becoming new ceiling | Scale to 5+ if needed |
+| Nginx | 8 workers, headroom remaining | Fine for now |
